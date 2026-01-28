@@ -51,14 +51,14 @@ app.get(" /api", (req, res) => {
 //================================================
 // ROUTE IMPORTS (Will add these on Day 2-3)
 // ================================================
-// const authRoutes = require('./routes/auth');
+const authRoutes = require("./routes/auth");
 // const projectRoutes = require('./routes/projects');
 // const taskRoutes = require('./routes/tasks');
 
 // ================================================
 // USE ROUTES (Will uncomment on Day 2-3)
 // ================================================
-// app.use('/api/auth', authRoutes);
+app.use("/api/auth", authRoutes);
 // app.use('/api/projects', projectRoutes);
 // app.use('/api/tasks', taskRoutes);
 
