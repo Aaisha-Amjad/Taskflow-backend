@@ -23,7 +23,7 @@ const register = async (req, res) => {
       email,
     ]);
 
-    if (userExists.rowCount.length > 0) {
+    if (userExists.rows.length > 0) {
       return res.status(400).json({ error: "Email already registeredd" });
     }
 

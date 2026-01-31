@@ -16,7 +16,7 @@ router.post("/register", authController.register);
 router.post("/login", authController.login);
 
 //GET /api/auth/me - Get current loggedin user info (protected route)
-router.get("/me", authController.getCurrentUser);
+router.get("/me", authMiddleware, authController.getCurrentUser);
 
 //Export
 //app.js will use this with: app.use(' /api/auth', authRoutes)
