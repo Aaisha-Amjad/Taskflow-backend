@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TaskFlow WebSocket Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 50px auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      .container {
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        color: #333;
+      }
+      .status {
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 5px;
+        font-weight: bold;
+      }
+      .connected {
+        background: #d4edda;
+        color: #155724;
+      }
+      .disconnected {
+        background: #f8d7da;
+        color: #721c24;
+      }
+      input,
+      button {
+        padding: 10px;
+        margin: 5px 0;
+        font-size: 16px;
+      }
+      input {
+        width: 300px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+      }
+      button {
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      #messages {
+        margin-top: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 5px;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      .message {
+        padding: 8px;
+        margin: 5px 0;
+        border-left: 3px solid #007bff;
+        background: white;
+      }
+      .error {
+        border-left-color: #dc3545;
+      }
+      .success {
+        border-left-color: #28a745;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🔌 TaskFlow WebSocket Test</h1>
+
+      <div id="status" class="status disconnected">❌ Not Connected</div>
+
+      <h3>Step 1: Login to get JWT token</h3>
+      <input
+        type="email"
+        id="email"
+        placeholder="Email"
+        value="test@example.com"
+      />
+      <input
+        type="password"
+        id="password"
+        placeholder="Password"
+        value="password123"
+      />
+      <button onclick="login()">Login</button>
+
+      <h3>Step 2: Connect to WebSocket</h3>
+      <button onclick="connectWebSocket()" id="connectBtn" disabled>
+        Connect WebSocket
+      </button>
+      <button onclick="disconnectWebSocket()" id="disconnectBtn" disabled>
+        Disconnect
+      </button>
+
+      <h3>Step 3: Test Ping/Pong</h3>
+      <input
+        type="text"
+        id="pingMessage"
+        placeholder="Message to send"
+        value="Hello Server!"
+        disabled
+      />
+      <button onclick="sendPing()" id="pingBtn" disabled>Send Ping</button>
+
+      <h3>Step 4: Test Join Project</h3>
+      <input
+        type="number"
+        id="projectId"
+        placeholder="Project ID"
+        value="1"
+        disabled
+      />
+      <button onclick="joinProject()" id="joinBtn" disabled>
+        Join Project
+      </button>
+
+      <div id="messages">
+        <h4>📨 Messages:</h4>
+      </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+      let socket = null;
+      let token = null;
+
+      // Add message to display
+      function addMessage(text, type = "message") {
+        const messagesDiv = document.getElementById("messages");
+        const msg = document.createElement("div");
+        msg.className = `message ${type}`;
+        msg.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong>: ${text}`;
+        messagesDiv.appendChild(msg);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      }
+
+      // Update connection status
+      function updateStatus(connected) {
+        const statusDiv = document.getElementById("status");
+        if (connected) {
+          statusDiv.className = "status connected";
+          statusDiv.textContent = "✅ Connected to WebSocket";
+        } else {
+          statusDiv.className = "status disconnected";
+          statusDiv.textContent = "❌ Not Connected";
+        }
+      }
+
+      // Login to get JWT token
+      async function login() {
+        const email = document.getElementById("email").value;
+        const password = document.getElementById("password").value;
+
+        addMessage("Attempting login...", "message");
+
+        try {
+          const response = await fetch("http://localhost:3000/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password }),
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            token = data.token;
+            addMessage(`✅ Login successful! Token received.`, "success");
+            addMessage(
+              `User: ${data.user.username} (${data.user.email})`,
+              "success",
+            );
+            document.getElementById("connectBtn").disabled = false;
+          } else {
+            addMessage(`❌ Login failed: ${data.error}`, "error");
+          }
+        } catch (error) {
+          addMessage(`❌ Login error: ${error.message}`, "error");
+        }
+      }
+
+      // Connect to WebSocket
+      function connectWebSocket() {
+        if (!token) {
+          addMessage("❌ Please login first!", "error");
+          return;
+        }
+
+        addMessage("Connecting to WebSocket...", "message");
+
+        socket = io("http://localhost:3000", {
+          auth: { token: token },
+        });
+
+        // Connection successful
+        socket.on("connect", () => {
+          addMessage("✅ WebSocket connected!", "success");
+          updateStatus(true);
+          document.getElementById("connectBtn").disabled = true;
+          document.getElementById("disconnectBtn").disabled = false;
+          document.getElementById("pingMessage").disabled = false;
+          document.getElementById("pingBtn").disabled = false;
+          document.getElementById("projectId").disabled = false;
+          document.getElementById("joinBtn").disabled = false;
+        });
+
+        // Receive pong response
+        socket.on("pong", (message) => {
+          addMessage(`📨 Received PONG: ${message}`, "success");
+        });
+
+        // Joined project room
+        socket.on("joined_project", (data) => {
+          addMessage(
+            `📂 Joined project ${data.projectId}: ${data.message}`,
+            "success",
+          );
+        });
+
+        // Disconnected
+        socket.on("disconnect", () => {
+          addMessage("❌ WebSocket disconnected", "error");
+          updateStatus(false);
+          document.getElementById("connectBtn").disabled = false;
+          document.getElementById("disconnectBtn").disabled = true;
+          document.getElementById("pingMessage").disabled = true;
+          document.getElementById("pingBtn").disabled = true;
+          document.getElementById("projectId").disabled = true;
+          document.getElementById("joinBtn").disabled = true;
+        });
+
+        // Connection error
+        socket.on("connect_error", (error) => {
+          addMessage(`❌ Connection error: ${error.message}`, "error");
+          updateStatus(false);
+        });
+      }
+
+      // Disconnect WebSocket
+      function disconnectWebSocket() {
+        if (socket) {
+          socket.disconnect();
+          addMessage("Disconnected from WebSocket", "message");
+        }
+      }
+
+      // Send ping
+      function sendPing() {
+        const message = document.getElementById("pingMessage").value;
+        if (socket && socket.connected) {
+          socket.emit("ping", message);
+          addMessage(`📤 Sent PING: ${message}`, "message");
+        } else {
+          addMessage("❌ Not connected!", "error");
+        }
+      }
+
+      // Join project
+      function joinProject() {
+        const projectId = document.getElementById("projectId").value;
+        if (socket && socket.connected) {
+          socket.emit("join_project", parseInt(projectId));
+          addMessage(
+            `📤 Requesting to join project ${projectId}...`,
+            "message",
+          );
+        } else {
+          addMessage("❌ Not connected!", "error");
+        }
+      }
+    </script>
+  </body>
+</html>
