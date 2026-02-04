@@ -255,7 +255,7 @@ const deleteProject = async (req, res) => {
     //Check if user is the owner
     const projectResult = await db.query(
       "SELECT owner_id FROM projects WHERE id = $1",
-      [projectOd],
+      [projectId],
     );
 
     if (projectResult.rows.length === 0) {
@@ -288,6 +288,253 @@ const deleteProject = async (req, res) => {
   }
 };
 
+//Add members
+
+const addMember = async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const { userId, role = "member" } = req.body;
+    const requesterId = req.user.userId;
+
+    //1. Check if requester is admin
+    const requesterCheck = await db.query(
+      "SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2",
+      [projectId, requesterId],
+    );
+
+    if (!requesterCheck.rows[0] || requesterCheck.rows[0].role != "admin") {
+      return res.status(403).json({ error: "Only admins can add members " });
+    }
+    //2. Check if user exists
+    const userCheck = await db.query("SELECT id FROM users WHERE id = $1", [
+      userId,
+    ]);
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    //3. Check not already a memeber
+    const memberCheck = await db.query(
+      "SELECT * FROM project_members WHERE project_id = $1 AND user_id = $2",
+      [projectId, userId],
+    );
+    if (memberCheck.rows.length > 0) {
+      return res.status(400).json({ error: "User is already a member" });
+    }
+
+    //4. Add Member
+    const result = await db.query(
+      "INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, $3) RETURNING *",
+      [projectId, userId, role],
+    );
+
+    // 5. Emit WebSocket event
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`project_${projectId}`).emit("member_added", {
+        projectId,
+        member: result.rows[0],
+        addedBy: requesterId,
+      });
+    }
+
+    res
+      .status(201)
+      .json({ message: "Member added successfully", member: result.rows[0] });
+  } catch (error) {
+    console.error("Add member error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+//Remove member
+const removeMember = async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const targetUserId = parseInt(req.params.userId);
+    const requesterId = req.user.userId;
+
+    //1. Check requester is admin
+    const requesterCheck = await db.query(
+      "SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2",
+      [projectId, requesterId],
+    );
+
+    if (!requesterCheck.rows[0] || requesterCheck.rows[0].role !== "admin") {
+      return res.status(403).json({ error: "Only admins can remove members" });
+    }
+
+    // 2. Get project owner
+    const projectCheck = await db.query(
+      "SELECT owner_id FROM projects WHERE id = $1",
+      [projectId],
+    );
+
+    if (projectCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    const ownerId = projectCheck.rows[0].owner_id;
+
+    //3. Cannot remove the owner
+    if (targetUserId === ownerId) {
+      return res.status(403).json({ error: "Cannot remove project owner" });
+    }
+
+    //4. Check target user is a member
+    const targetCheck = await db.query(
+      "SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2",
+      [projectId, targetUserId],
+    );
+
+    if (targetCheck.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ error: "User is not a member of this project" });
+    }
+
+    //5. If removing yourself, make sure you're not the last admin
+    if (
+      requesterId === targetUserId &&
+      requesterCheck.rows[0].role === "admin"
+    ) {
+      const adminCount = await db.query(
+        "SELECT COUNT (*) FROM project_members WHERE project_id = $1 AND role = $2",
+        [projectId, "admin"],
+      );
+
+      if (parseInt(adminCount.rows[0].count) <= 1) {
+        return res.status(403).json({
+          error: "Cannot remove the last admin. Promote another member first",
+        });
+      }
+    }
+
+    //6. Remove member
+    await db.query(
+      "DELETE FROM project_members WHERE project_id = $1 AND user_id = $2",
+      [projectId, targetUserId],
+    );
+
+    //7. Emit websocket event
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`project_${projectId}`).emit("member_removed", {
+        projectId,
+        userId: targetUserId,
+        removedBy: { id: requesterId, email: req.user.email },
+      });
+    }
+
+    res.json({ message: "Member removed successfully" });
+  } catch (error) {
+    console.error("Remove member error:", error);
+    res.status(500).json({ error: "Server error removing member" });
+  }
+};
+
+const updateMemberRole = async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const targetUserId = parseInt(req.params.userId);
+    const { role } = req.body;
+    const requesterId = req.user.userId;
+
+    // 1. Validate role
+    if (!["admin", "member"].includes(role)) {
+      return res
+        .status(400)
+        .json({ error: "Invalid role. Must be admin or member" });
+    }
+
+    // 2. Check requester is admin
+    const requesterCheck = await db.query(
+      "SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2",
+      [projectId, requesterId],
+    );
+
+    if (!requesterCheck.rows[0] || requesterCheck.rows[0].role !== "admin") {
+      return res
+        .status(403)
+        .json({ error: "Only admins can change member roles" });
+    }
+
+    // 3. Get project owner
+    const projectCheck = await db.query(
+      "SELECT owner_id FROM projects WHERE id = $1",
+      [projectId],
+    );
+
+    if (projectCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    const ownerId = projectCheck.rows[0].owner_id;
+
+    // 4. Cannot change owner's role
+    if (targetUserId === ownerId) {
+      return res
+        .status(403)
+        .json({ error: "Cannot change project owner role" });
+    }
+
+    // 5. Get current role
+    const targetCheck = await db.query(
+      "SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2",
+      [projectId, targetUserId],
+    );
+
+    if (targetCheck.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ error: "User is not a member of this project" });
+    }
+
+    const currentRole = targetCheck.rows[0].role;
+
+    // 6. If demoting yourself from admin, check you're not the last admin
+    if (
+      requesterId === targetUserId &&
+      currentRole === "admin" &&
+      role === "member"
+    ) {
+      const adminCount = await db.query(
+        "SELECT COUNT(*) FROM project_members WHERE project_id = $1 AND role = $2",
+        [projectId, "admin"],
+      );
+
+      if (parseInt(adminCount.rows[0].count) <= 1) {
+        return res.status(403).json({ error: "Cannot demote the last admin" });
+      }
+    }
+
+    // 7. Update role
+    const result = await db.query(
+      "UPDATE project_members SET role = $1 WHERE project_id = $2 AND user_id = $3 RETURNING *",
+      [role, projectId, targetUserId],
+    );
+
+    // 8. Emit WebSocket event
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`project_${projectId}`).emit("member_role_updated", {
+        projectId,
+        userId: targetUserId,
+        newRole: role,
+        updatedBy: { id: requesterId, email: req.user.email },
+      });
+    }
+
+    res.json({
+      message: "Member role updated successfully",
+      member: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Update member role error:", error);
+    res.status(500).json({ error: "Server error updating member role" });
+  }
+};
+
 //Export
 module.exports = {
   createProject,
@@ -295,4 +542,7 @@ module.exports = {
   getProject,
   updateProject,
   deleteProject,
+  addMember,
+  removeMember,
+  updateMemberRole,
 };
