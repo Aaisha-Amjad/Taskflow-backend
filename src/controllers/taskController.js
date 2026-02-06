@@ -150,6 +150,10 @@ const getTasks = async (req, res) => {
       query += ` AND t.assigned_to = $${paramCount}`;
       params.push(assigned_to);
     }
+    // Filter for overdue tasks
+    if (req.query.overdue === "true") {
+      query += ` AND t.due_date < CURRENT_TIMESTAMP AND t.status != 'DONE'`;
+    }
 
     // Step 3: Add sorting
     // Only allow sorting by valid fields to prevent SQL injection
@@ -497,6 +501,206 @@ const updateTaskPriority = async (req, res) => {
   }
 };
 
+// Assign task to task to user
+// POST /api/tasks/:id/assign
+//Body :{ userId }
+//Assign a tasl to a specific user ( must be project member)
+const assignTask = async (req, res) => {
+  try {
+    const taskId = req.params.id;
+    const { userId } = req.body;
+    const currenUserId = req.user.userId;
+
+    //Step 1: Validate userId is provided
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+
+    //Step 2: Get task details
+    const taskResult = await db.query("SELECT * FROM tasks WHERE id = $1", [
+      taskId,
+    ]);
+    if (taskResult.rows.length === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const task = taskResult.rows[0];
+
+    //Step 3: Verify the user being assigned is a project member
+    const memberCheck = await db.query(
+      "SELECT user_id FROM project_members WHERE project_id = $1 AND user_id = $2",
+      [task.project_id, userId],
+    );
+    if (memberCheck.rows.length === 0) {
+      return res.status(400).json({
+        error: "Cannot assign task to non-member",
+      });
+    }
+    //Step4: Update task with assigned user
+    const result = await db.query(
+      `UPDATE tasks
+      SET assigned_to = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+      RETURNING *`,
+      [userId, taskId],
+    );
+    const updatedTask = result.rows[0];
+
+    //Step 5: Get assignee user details for response
+    const userResult = await db.query(
+      "SELECT id, username, email FROM users WHERE id = $1",
+      [userId],
+    );
+
+    const assignee = userResult.rows[0];
+
+    //Step 6: Broadcast real-time event
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`project_${task.project_id}`).emit("task_assigned", {
+        taskId,
+        task: updatedTask,
+        assignee,
+        assignedBy: { id: currenUserId, email: req.user.email },
+      });
+    }
+
+    //Step 7: Return success response
+    res.json({
+      message: "Task assigned successfully",
+      task: updatedTask,
+      assignee,
+    });
+  } catch (error) {
+    console.error("Assign task error: ", error);
+    res.status(500).json({ error: " Server error assigning task" });
+  }
+};
+
+//UNASSIGN TASK
+//DELETE /api/tasks/:id/assign
+//Removes the assigned user from a task
+const unassignTask = async (req, res) => {
+  try {
+    const taskId = req.params.id;
+    const currentUserId = req.user.userId;
+
+    //Step 1 get task details
+    const taskResult = await db.query("SELECT * FROM tasks WHERE id = $1", [
+      taskId,
+    ]);
+    if (taskResult.rows.length === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+
+    const task = taskResult.rows[0];
+    //Step 2: Check if tasl is currently assigned
+    if (!task.assigned_to) {
+      return res.status(400).json({ error: "Task is not assigned to anyone" });
+    }
+
+    // Step 3: Unassign task (set assigned_to to NULL)
+    const result = await db.query(
+      `UPDATE tasks
+       SET assigned_to = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING *`,
+      [taskId],
+    );
+
+    const updatedTask = result.rows[0];
+    //Step 4: Broadcast real-time event
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`project_${task.project_id}`).emit("task_unassigned", {
+        taskId,
+        task: updatedTask,
+        unassignedBy: { id: currentUserId, email: req.user.email },
+      });
+    }
+
+    //Step 5: Return success response
+    res.json({
+      message: "Tasl unassigned successfully",
+      task: updatedTask,
+    });
+  } catch (error) {
+    console.error("Unassign task error: ", error);
+    res.status(500).json({ error: "Server error unassigning task" });
+  }
+};
+
+//SEARCH TASKS
+//GET /api/tasks/search?q=keyword&project_id=1
+// Searches tasks by title and description
+//Optionally filter by project
+
+const searchTasks = async (req, res) => {
+  try {
+    const { q, project_id } = req.query;
+    const userId = req.user.userId;
+
+    //Step 1: Validate search query
+    if (!q || q.trim().length < 2) {
+      return res.status(400).json({
+        error: " Search query must be atleast 2 characters",
+      });
+    }
+
+    //Step 2: Build search query
+    // Only search in projects where user is member
+    let query = `
+      SELECT DISTINCT
+        t.*,
+        p.name as project_name,
+        u1.username as created_by_username,
+        u2.username as assigned_to_username,
+        CASE
+          WHEN t.title ILIKE $2 THEN 1
+          ELSE 2
+        END as relevance
+      FROM tasks t
+      JOIN projects p ON t.project_id = p.id
+      JOIN project_members pm ON p.id = pm.project_id
+      LEFT JOIN users u1 ON t.created_by = u1.id
+      LEFT JOIN users u2 ON t.assigned_to = u2.id
+      WHERE pm.user_id = $1
+        AND (
+          t.title ILIKE $2
+          OR t.description ILIKE $2
+          )`;
+
+    const params = [userId, `%${q}%`];
+    let paramCount = 2;
+
+    //Step 3: Optional project filter
+    if (project_id) {
+      paramCount++;
+      query += ` AND t.project_id = $${paramCount}`;
+      params.push(project_id);
+    }
+
+    //Step 4: Order by relevance (title matches first)
+    query += `
+      ORDER BY
+        relevance,
+        t.created_at DESC
+      LIMIT 50`;
+
+    // Step 5: Execute query
+    const result = await db.query(query, params);
+
+    //Step 6: Return results
+    res.json({
+      query: q,
+      results: result.rows,
+      count: result.rows.length,
+    });
+  } catch (error) {
+    console.error(" Search tasks error: ", error);
+    res.status(500).json({ erro: "Server error searching tasks" });
+  }
+};
+
 //Export all functions
 //These will imported by routes/tasks.js
 module.exports = {
@@ -507,4 +711,7 @@ module.exports = {
   deleteTask,
   updateTaskStatus,
   updateTaskPriority,
+  assignTask,
+  unassignTask,
+  searchTasks,
 };

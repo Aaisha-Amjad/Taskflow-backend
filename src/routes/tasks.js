@@ -13,7 +13,10 @@ const {
     updateTask,
     deleteTask,
     updateTaskStatus,
-    updateTaskPriority
+    updateTaskPriority,
+    assignTask,
+    unassignTask,
+    searchTasks
 } = require('../controllers/taskController');
 
 // Import middleware
@@ -36,6 +39,15 @@ router.use(authMiddleware);
 
 router.post('/projects/:projectId/tasks', isProjectMember, createTask);
 
+//Search tasks
+// GET /api/tasks/search?q=keyword
+// MUST come before /tasks/:id route to avoid conflict
+router.get('/tasks/search', searchTasks);
+
+//Assign task to user
+//POST /api/tasks/:id/assign
+router.post('/tasks/:id/assign', assignTask);
+
 //Get all tasks in a project (with filtering/sorting)
 // GET /api/projects/:projectId/tasks?status=TODO&priority=HIGH&sort=due_date
 //Must be a project member to view tasks
@@ -55,6 +67,10 @@ router.put('/tasks/:id', updateTask);
 // DELETE /api/tasks/:id
 // Membership check happens inside deleteTask controller
 router.delete('/tasks/:id', deleteTask);
+
+//Unassign task
+//DELETE /api/tasks/:id/assign
+router.delete('/tasks/:id/assign', unassignTask);
 
 //====================================================
 // Task status & priority routes
