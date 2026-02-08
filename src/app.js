@@ -54,7 +54,8 @@ app.get(" /api", (req, res) => {
 const authRoutes = require("./routes/auth");
 const projectRoutes = require("./routes/projects");
 const taskRoutes = require("./routes/tasks");
-const userRoutes = require('./routes/users');
+const userRoutes = require("./routes/users");
+const commentRoutes = require("./routes/comments");
 
 // ================================================
 // USE ROUTES (Will uncomment on Day 2-3)
@@ -63,6 +64,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api", taskRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api", commentRoutes);
 // ================================================
 // 404 HANDLER
 // Catches requests to non-existent routes
