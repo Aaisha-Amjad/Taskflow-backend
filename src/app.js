@@ -4,6 +4,7 @@
 const express = require("express"); //Webframe work for node.js
 const cors = require("cors"); //Allows frontend (react, etc) to connect from different port
 const dotenv = require("dotenv"); //Load enviroment variables
+const setupSwagger = require("./config/swagger");
 
 dotenv.config(); //load variables from .env file
 const app = express(); //create express application
@@ -47,6 +48,10 @@ app.get(" /api", (req, res) => {
     },
   });
 });
+
+//Swagger documentation
+//Available at http://localhost:3000/api-docs
+setupSwagger(app);
 
 //================================================
 // ROUTE IMPORTS (Will add these on Day 2-3)

@@ -30,7 +30,7 @@ const getMyTasks = async (req, res) => {
 
     // Step 2: Add optional filters
     if (status) {
-      paraCount++;
+      paramCount++;
       query += ` AND t.status = $${paramCount}`;
       params.push(status);
     }
