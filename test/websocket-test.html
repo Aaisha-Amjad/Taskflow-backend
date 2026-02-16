@@ -20,11 +20,13 @@
       }
       h1 {
         color: #333;
+        border-bottom: 3px solid #4caf50;
+        padding-bottom: 10px;
       }
       .status {
         padding: 10px;
-        margin: 10px 0;
         border-radius: 5px;
+        margin: 20px 0;
         font-weight: bold;
       }
       .connected {
@@ -35,50 +37,59 @@
         background: #f8d7da;
         color: #721c24;
       }
-      input,
       button {
-        padding: 10px;
-        margin: 5px 0;
-        font-size: 16px;
-      }
-      input {
-        width: 300px;
-        border: 1px solid #ddd;
-        border-radius: 5px;
-      }
-      button {
-        background: #007bff;
+        background: #4caf50;
         color: white;
         border: none;
+        padding: 10px 20px;
+        margin: 5px;
         border-radius: 5px;
         cursor: pointer;
+        font-size: 14px;
       }
       button:hover {
-        background: #0056b3;
+        background: #45a049;
       }
       button:disabled {
         background: #ccc;
         cursor: not-allowed;
       }
-      #messages {
-        margin-top: 20px;
-        padding: 15px;
-        background: #f8f9fa;
+      .danger {
+        background: #f44336;
+      }
+      .danger:hover {
+        background: #da190b;
+      }
+      input {
+        padding: 10px;
+        width: 100%;
+        margin: 10px 0;
+        border: 1px solid #ddd;
         border-radius: 5px;
-        max-height: 300px;
+        box-sizing: border-box;
+      }
+      .section {
+        margin: 20px 0;
+        padding: 15px;
+        background: #f9f9f9;
+        border-left: 4px solid #4caf50;
+      }
+      #messageLog {
+        background: #1e1e1e;
+        color: #0f0;
+        padding: 15px;
+        border-radius: 5px;
+        height: 300px;
         overflow-y: auto;
+        font-family: "Courier New", monospace;
+        font-size: 12px;
       }
-      .message {
-        padding: 8px;
+      .log-entry {
         margin: 5px 0;
-        border-left: 3px solid #007bff;
-        background: white;
+        padding: 3px 0;
       }
-      .error {
-        border-left-color: #dc3545;
-      }
-      .success {
-        border-left-color: #28a745;
+      .log-time {
+        color: #888;
       }
     </style>
   </head>
@@ -88,203 +99,254 @@
 
       <div id="status" class="status disconnected">❌ Not Connected</div>
 
-      <h3>Step 1: Login to get JWT token</h3>
-      <input
-        type="email"
-        id="email"
-        placeholder="Email"
-        value="test@example.com"
-      />
-      <input
-        type="password"
-        id="password"
-        placeholder="Password"
-        value="password123"
-      />
-      <button onclick="login()">Login</button>
+      <!-- STEP 1: Manual Token Input -->
+      <div class="section">
+        <h3>Step 1: Enter JWT Token</h3>
+        <input
+          type="text"
+          id="tokenInput"
+          placeholder="Paste JWT token here (get from /api-docs login)"
+        />
+        <small
+          >Get token from Swagger UI: http://localhost:3000/api-docs →
+          Login</small
+        >
+      </div>
 
-      <h3>Step 2: Connect to WebSocket</h3>
-      <button onclick="connectWebSocket()" id="connectBtn" disabled>
-        Connect WebSocket
-      </button>
-      <button onclick="disconnectWebSocket()" id="disconnectBtn" disabled>
-        Disconnect
-      </button>
+      <!-- STEP 2: Connect -->
+      <div class="section">
+        <h3>Step 2: Connect to WebSocket</h3>
+        <button id="connectBtn" onclick="connect()">Connect WebSocket</button>
+        <button
+          id="disconnectBtn"
+          onclick="disconnect()"
+          class="danger"
+          disabled
+        >
+          Disconnect
+        </button>
+      </div>
 
-      <h3>Step 3: Test Ping/Pong</h3>
-      <input
-        type="text"
-        id="pingMessage"
-        placeholder="Message to send"
-        value="Hello Server!"
-        disabled
-      />
-      <button onclick="sendPing()" id="pingBtn" disabled>Send Ping</button>
+      <!-- STEP 3: Ping Test -->
+      <div class="section">
+        <h3>Step 3: Test Ping/Pong</h3>
+        <button id="pingBtn" onclick="sendPing()" disabled>Send Ping</button>
+      </div>
 
-      <h3>Step 4: Test Join Project</h3>
-      <input
-        type="number"
-        id="projectId"
-        placeholder="Project ID"
-        value="1"
-        disabled
-      />
-      <button onclick="joinProject()" id="joinBtn" disabled>
-        Join Project
-      </button>
+      <!-- STEP 4: Join Project -->
+      <div class="section">
+        <h3>Step 4: Test Join Project</h3>
+        <input
+          type="number"
+          id="projectId"
+          placeholder="Enter Project ID (e.g., 5)"
+        />
+        <button id="joinBtn" onclick="joinProject()" disabled>
+          Join Project
+        </button>
+        <button id="leaveBtn" onclick="leaveProject()" disabled>
+          Leave Project
+        </button>
+      </div>
 
-      <div id="messages">
-        <h4>📨 Messages:</h4>
+      <!-- STEP 5: Online Users -->
+      <div class="section">
+        <h3>Step 5: Online Users in Project</h3>
+        <div
+          id="onlineUsers"
+          style="
+            background: #e8f5e9;
+            padding: 10px;
+            border-radius: 5px;
+            min-height: 40px;
+          "
+        >
+          <strong>Online users:</strong> <span id="userCount">0</span>
+          <ul id="userList" style="margin: 10px 0; padding-left: 20px"></ul>
+        </div>
+      </div>
+
+      <!-- Message Log -->
+      <div class="section">
+        <h3>📨 Messages:</h3>
+        <div id="messageLog"></div>
       </div>
     </div>
 
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
     <script>
       let socket = null;
-      let token = null;
+      let currentProjectId = null;
 
-      // Add message to display
-      function addMessage(text, type = "message") {
-        const messagesDiv = document.getElementById("messages");
-        const msg = document.createElement("div");
-        msg.className = `message ${type}`;
-        msg.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong>: ${text}`;
-        messagesDiv.appendChild(msg);
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      function log(message) {
+        const now = new Date();
+        const time = now.toLocaleTimeString();
+        const logDiv = document.getElementById("messageLog");
+        const entry = document.createElement("div");
+        entry.className = "log-entry";
+        entry.innerHTML = `<span class="log-time">${time}:</span> ${message}`;
+        logDiv.appendChild(entry);
+        logDiv.scrollTop = logDiv.scrollHeight;
       }
 
-      // Update connection status
       function updateStatus(connected) {
         const statusDiv = document.getElementById("status");
+        const connectBtn = document.getElementById("connectBtn");
+        const disconnectBtn = document.getElementById("disconnectBtn");
+        const pingBtn = document.getElementById("pingBtn");
+        const joinBtn = document.getElementById("joinBtn");
+        const leaveBtn = document.getElementById("leaveBtn");
+
         if (connected) {
           statusDiv.className = "status connected";
-          statusDiv.textContent = "✅ Connected to WebSocket";
+          statusDiv.textContent = "✅ Connected";
+          connectBtn.disabled = true;
+          disconnectBtn.disabled = false;
+          pingBtn.disabled = false;
+          joinBtn.disabled = false;
         } else {
           statusDiv.className = "status disconnected";
           statusDiv.textContent = "❌ Not Connected";
+          connectBtn.disabled = false;
+          disconnectBtn.disabled = true;
+          pingBtn.disabled = true;
+          joinBtn.disabled = true;
+          leaveBtn.disabled = true;
         }
       }
 
-      // Login to get JWT token
-      async function login() {
-        const email = document.getElementById("email").value;
-        const password = document.getElementById("password").value;
+      function connect() {
+        const token = document.getElementById("tokenInput").value.trim();
 
-        addMessage("Attempting login...", "message");
-
-        try {
-          const response = await fetch("http://localhost:3000/api/auth/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, password }),
-          });
-
-          const data = await response.json();
-
-          if (response.ok) {
-            token = data.token;
-            addMessage(`✅ Login successful! Token received.`, "success");
-            addMessage(
-              `User: ${data.user.username} (${data.user.email})`,
-              "success",
-            );
-            document.getElementById("connectBtn").disabled = false;
-          } else {
-            addMessage(`❌ Login failed: ${data.error}`, "error");
-          }
-        } catch (error) {
-          addMessage(`❌ Login error: ${error.message}`, "error");
-        }
-      }
-
-      // Connect to WebSocket
-      function connectWebSocket() {
         if (!token) {
-          addMessage("❌ Please login first!", "error");
+          alert("Please enter a JWT token first!");
           return;
         }
 
-        addMessage("Connecting to WebSocket...", "message");
+        log("🔌 Connecting to WebSocket...");
 
         socket = io("http://localhost:3000", {
-          auth: { token: token },
+          auth: {
+            token: token,
+          },
         });
 
-        // Connection successful
         socket.on("connect", () => {
-          addMessage("✅ WebSocket connected!", "success");
+          log("✅ Connected to WebSocket server!");
           updateStatus(true);
-          document.getElementById("connectBtn").disabled = true;
-          document.getElementById("disconnectBtn").disabled = false;
-          document.getElementById("pingMessage").disabled = false;
-          document.getElementById("pingBtn").disabled = false;
-          document.getElementById("projectId").disabled = false;
-          document.getElementById("joinBtn").disabled = false;
         });
 
-        // Receive pong response
-        socket.on("pong", (message) => {
-          addMessage(`📨 Received PONG: ${message}`, "success");
-        });
-
-        // Joined project room
-        socket.on("joined_project", (data) => {
-          addMessage(
-            `📂 Joined project ${data.projectId}: ${data.message}`,
-            "success",
-          );
-        });
-
-        // Disconnected
         socket.on("disconnect", () => {
-          addMessage("❌ WebSocket disconnected", "error");
+          log("❌ Disconnected from server");
           updateStatus(false);
-          document.getElementById("connectBtn").disabled = false;
-          document.getElementById("disconnectBtn").disabled = true;
-          document.getElementById("pingMessage").disabled = true;
-          document.getElementById("pingBtn").disabled = true;
-          document.getElementById("projectId").disabled = true;
-          document.getElementById("joinBtn").disabled = true;
         });
 
-        // Connection error
         socket.on("connect_error", (error) => {
-          addMessage(`❌ Connection error: ${error.message}`, "error");
+          log("❌ Connection error: " + error.message);
           updateStatus(false);
+        });
+
+        socket.on("pong", (message) => {
+          log("📨 Received pong: " + message);
+        });
+
+        socket.on("joined_project", (data) => {
+          log(`✅ Joined project ${data.projectId}: ${data.message}`);
+          currentProjectId = data.projectId;
+          document.getElementById("leaveBtn").disabled = false;
+
+          // Display online users
+          displayOnlineUsers(data.onlineUsers);
+        });
+
+        // Listen for real-time events (for Day 9)
+        socket.on("task_created", (data) => {
+          log("🆕 Task created: " + JSON.stringify(data));
+        });
+
+        socket.on("task_updated", (data) => {
+          log("✏️ Task updated: " + JSON.stringify(data));
+        });
+
+        socket.on("comment_added", (data) => {
+          log("💬 Comment added: " + JSON.stringify(data));
+        });
+
+        // Listen for presence events
+        socket.on("user_connected", (data) => {
+          log(`✅ You are connected! ${data.onlineCount} total users online`);
+        });
+
+        socket.on("user_joined_project", (data) => {
+          log(`👤 ${data.user.email} joined project ${data.projectId}`);
+          updateOnlineUsers();
+        });
+
+        socket.on("user_left_project", (data) => {
+          log(`👋 ${data.user.email} left project ${data.projectId}`);
+          updateOnlineUsers();
         });
       }
 
-      // Disconnect WebSocket
-      function disconnectWebSocket() {
+      function disconnect() {
         if (socket) {
           socket.disconnect();
-          addMessage("Disconnected from WebSocket", "message");
+          socket = null;
+          log("🔌 Disconnected manually");
+          updateStatus(false);
         }
       }
 
-      // Send ping
       function sendPing() {
-        const message = document.getElementById("pingMessage").value;
-        if (socket && socket.connected) {
-          socket.emit("ping", message);
-          addMessage(`📤 Sent PING: ${message}`, "message");
-        } else {
-          addMessage("❌ Not connected!", "error");
+        if (socket) {
+          log("📤 Sending ping...");
+          socket.emit("ping", "Hello from test client!");
         }
       }
 
-      // Join project
       function joinProject() {
         const projectId = document.getElementById("projectId").value;
-        if (socket && socket.connected) {
-          socket.emit("join_project", parseInt(projectId));
-          addMessage(
-            `📤 Requesting to join project ${projectId}...`,
-            "message",
-          );
-        } else {
-          addMessage("❌ Not connected!", "error");
+        if (!projectId) {
+          alert("Please enter a project ID!");
+          return;
         }
+
+        if (socket) {
+          log(`📂 Joining project ${projectId}...`);
+          socket.emit("join_project", parseInt(projectId));
+        }
+      }
+
+      function leaveProject() {
+        if (socket && currentProjectId) {
+          log(`📂 Leaving project ${currentProjectId}...`);
+          socket.emit("leave_project", currentProjectId);
+          currentProjectId = null;
+          document.getElementById("leaveBtn").disabled = true;
+        }
+      }
+
+      // Initial state
+      updateStatus(false);
+      log("🚀 WebSocket test client loaded. Enter token and click Connect.");
+
+      function displayOnlineUsers(users) {
+        const userList = document.getElementById("userList");
+        const userCount = document.getElementById("userCount");
+
+        userCount.textContent = users.length;
+        userList.innerHTML = "";
+
+        users.forEach((user) => {
+          const li = document.createElement("li");
+          li.textContent = user.email;
+          userList.appendChild(li);
+        });
+      }
+
+      function updateOnlineUsers() {
+        // Request updated user list (we'll implement this in Day 9)
+        log("👥 User presence updated");
       }
     </script>
   </body>

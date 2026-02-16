@@ -49,6 +49,7 @@ app.get(" /api", (req, res) => {
   });
 });
 
+app.use("/test", express.static("test"));
 //Swagger documentation
 //Available at http://localhost:3000/api-docs
 setupSwagger(app);
