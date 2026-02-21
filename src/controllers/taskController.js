@@ -18,31 +18,11 @@ const createTask = async (req, res) => {
     //Get user ID from JWT token (set by authMiddleware)
     const userId = req.user.userId;
 
-    //Step 1: validate required fields
-    if (!title) {
-      return res.status(400).json({
-        error: "Task title is required",
-      });
+    // step1: validate title exists
+    if (!title || title.trim().length === 0) {
+      return res.status(400).json({ error: "Task title is required" });
     }
-
-    //Step 2: Validate priority if provided
-    //Priority must be one of: LOW, MEDIUM, HIGH
-    if (priority && !["LOW", "MEDIUM", "HIGH"].includes(priority)) {
-      return res.status(400).json({
-        error: "Invalid priority. Must be LOW, MEDIUM, or HIGH",
-      });
-    }
-
-    // STEP 3 : validate status if provided
-    // Status must be one of: TODO, IN_PROGRESS, DONE
-    if (status && !["TODO", "IN_PROGRESS", "DONE"].includes(status)) {
-      return res.status(400).json({
-        error: "Invalid status. Must be TODO, IN_PROGRESS, or DONE",
-      });
-    }
-
-    //Step 4: If assigning to someone, verify they're a project member
-    // we cant assign tasks to people who aren't in the project
+    // Step2 : Validate assignee (if provided) is a project member
     if (assigned_to) {
       const memberCheck = await db.query(
         "SELECT user_id FROM project_members WHERE project_id = $1 AND user_id = $2",
@@ -50,53 +30,77 @@ const createTask = async (req, res) => {
       );
 
       if (memberCheck.rows.length === 0) {
-        return res.status(400).json({
-          error: "Cannot assign task to non-member",
-        });
+        return res
+          .status(400)
+          .json({ error: "Cannot assign task to non-member" });
       }
     }
 
-    //Step 5: Create the task in database
-    // INSERT returns the created task with all fields including auto-generated ones
+    // Step 3: Insert task into database
     const result = await db.query(
-      `INSERT INTO tasks
-            (project_id, title, description, priority, status, assigned_to, due_date, created_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            RETURNING *`,
-
+      `INSERT INTO tasks(project_id, title, description, status, priority, assigned_to, due_date, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
       [
         projectId,
-        title,
-        description || null, //use null if no description
-        priority || "MEDIUM", // Default priority is medium
-        status || "TODO", // Default status is TODO
-        assigned_to || null, // use null if not assigned
-        due_date || null, // use null if no due date
-        userId, //Creator is current user
+        title.trim(),
+        description || null,
+        status || "TODO",
+        priority || "MEDIUM",
+        assigned_to || null,
+        due_date || null,
+        userId,
       ],
     );
 
-    const task = result.rows[0];
+    const newTask = result.rows[0];
 
-    //Step 6: Broadcast real-time event to all project members
-    //This notifies everyone in the project that a task was created
+    // Step 4: Get creator details for the broadcast
+    const userResult = await db.query(
+      "SELECT id, username, email FROM users WHERE id = $1",
+      [userId],
+    );
+    const creator = userResult.rows[0];
 
-    const io = req.app.get("io");
-    if (io) {
-      io.to(`project_${projectId}`).emit("task_created", {
-        task,
-        createdBy: { id: userId, email: req.user.email },
-      });
+    //Step 5: Get assignee details (if task is assigned)
+    let assignee = null;
+    if (assigned_to) {
+      const assigneeResult = await db.query(
+        "SELECT id, username, email FROM users WHERE id = $1",
+        [assigned_to],
+      );
+      assignee = assigneeResult.rows[0];
     }
 
-    //Step 7 : Send success response
+    //STEP 6: Broadcast real time event
+    // Get the socket.io instance from express app
+    const io = req.app.get("io");
+    if (io) {
+      //Broadcast to everyone in this project's room
+      io.to(`project_${projectId}`).emit("task_created", {
+        projectId: parseInt(projectId), // Which project this task belongs to
+        task: {
+          ...newTask, //All task data(id, title, status)
+          created_by: creator, // Who created it (username, email)
+          assigned_to: assignee, // Who it'ss assigned to (or null)
+        },
+      });
+
+      console.log(`📢 Broadcasted task_created event to project_${projectId}`);
+    }
+
+    //Step 7: Send success response to the API caller
     res.status(201).json({
       message: "Task created successfully",
-      task,
+      task: {
+        ...newTask,
+        created_by: creator,
+        assigned_to: assignee,
+      },
     });
   } catch (error) {
     console.error("Create task error:", error);
-    res.status(500).json({ error: "Server error creating task " });
+    res.status(500).json({ error: "Server error creating task" });
   }
 };
 
@@ -141,6 +145,12 @@ const getTasks = async (req, res) => {
 
     if (status) {
       paramCount++;
+      query += ` AND t.status = $${paramCount}`;
+      params.push(status);
+    }
+
+    if (priority) {
+      paramCount++;
       query += ` AND t.priority = $${paramCount}`;
       params.push(priority);
     }
@@ -172,7 +182,7 @@ const getTasks = async (req, res) => {
       if (sort === "priority") {
         query += ` DESC`;
       } else {
-        query += " ASS";
+        query += " ASC";
       }
     } else {
       //Defaul: newest tasks first
@@ -266,6 +276,33 @@ const updateTask = async (req, res) => {
     }
 
     const exisitingTask = taskResult.rows[0];
+    const projectId = exisitingTask.project_id;
+
+    // Step 2: Verify if user is a project member
+    const memberCheck = await db.query(
+      "SELECT user_id FROM project_members WHERE project_id = $1 AND user_id = $2",
+      [projectId, userId],
+    );
+
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({
+        error: "Acess denied: You are not a member of this project",
+      });
+    }
+
+    // Step 3: If changing assigmee, verify new assignee is  a project member
+    if (assigned_to !== undefined && assigned_to !== null) {
+      const assigneeCheck = await db.query(
+        "SELECT user_id FROM project_members WHERE project_id = $1 AND user_id = $2",
+        [projectId, assigned_to],
+      );
+
+      if (assigneeCheck.rows.length === 0) {
+        return res.status(400).json({
+          error: "Cannot assign task to non-member",
+        });
+      }
+    }
 
     //Step 2: validate priority if provided
     if (priority && !["LOW", "MEDIUM", "HIGH"].includes(priority)) {
@@ -493,7 +530,7 @@ const updateTaskPriority = async (req, res) => {
     //Step 5: Return updated task
     res.json({
       message: "Task priority updated successfully",
-      task: updateTask,
+      task: updatedTask,
     });
   } catch (error) {
     console.error("Update task priority error:", error);
