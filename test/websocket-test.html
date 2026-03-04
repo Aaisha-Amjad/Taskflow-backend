@@ -260,16 +260,46 @@
         });
 
         // Listen for real-time events (for Day 9)
+        //Task events
         socket.on("task_created", (data) => {
-          log("🆕 Task created: " + JSON.stringify(data));
+          log("🆕 Task created: " + JSON.stringify(data, null, 2));
         });
 
         socket.on("task_updated", (data) => {
-          log("✏️ Task updated: " + JSON.stringify(data));
+          log("✏️ Task updated: " + JSON.stringify(data, null, 2));
         });
 
+        socket.on("task_deleted", (data) => {
+          log("🗑️ Task deleted: " + JSON.stringify(data, null, 2));
+        });
+
+        socket.on("task_status_changed", (data) => {
+          log("📊 Task status changed: " + JSON.stringify(data, null, 2));
+        });
+
+        socket.on("task_priority_changed", (data) => {
+          log("⚡ Task priority changed: " + JSON.stringify(data, null, 2));
+        });
+
+        socket.on("task_assigned", (data) => {
+          log("👤 Task assigned: " + JSON.stringify(data, null, 2));
+        });
+
+        socket.on("task_unassigned", (data) => {
+          log("👤 Task unassigned: " + JSON.stringify(data, null, 2));
+        });
+
+        // Comment events
         socket.on("comment_added", (data) => {
-          log("💬 Comment added: " + JSON.stringify(data));
+          log("💬 Comment added: " + JSON.stringify(data, null, 2));
+        });
+
+        socket.on("comment_updated", (data) => {
+          log("✏️ Comment updated: " + JSON.stringify(data, null, 2));
+        });
+
+        socket.on("comment_deleted", (data) => {
+          log("🗑️ Comment deleted: " + JSON.stringify(data, null, 2));
         });
 
         // Listen for presence events

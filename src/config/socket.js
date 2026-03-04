@@ -13,7 +13,7 @@ const onlineUsers = new Map(); //User id -> {socketId, email, projects: Set()}
 //called from server.js after Express server starts
 
 const initializeSocket = (server) => {
-  console.log("Initialising socket.io...");
+  console.log("🔧 [SOCKET.JS] Starting Socket.io initialization...");
 
   console.log();
   //create socket.io instance
@@ -26,7 +26,11 @@ const initializeSocket = (server) => {
     transports: ["websocket", "polling"], // Allow fallback to polling
     allowEIO3: true, //Backwards compatibility
   });
-  console.log("Socket.io instance is created");
+
+  console.log(
+    "🔧 [SOCKET.JS] Socket.io instance created:",
+    io ? "SUCCESS" : "FAILED",
+  ); // ← ADD THIS
 
   //authentication middleware for socket.io
   //verify JWT token before allowing connection
@@ -171,6 +175,8 @@ const initializeSocket = (server) => {
   });
 
   console.log(" Socket.io event handlers registered");
+  console.log(" Socket.js returning io instance to server.js");
+  return io;
 };
 
 //Export

@@ -74,8 +74,12 @@ const createTask = async (req, res) => {
 
     //STEP 6: Broadcast real time event
     // Get the socket.io instance from express app
+    console.log("🔥 DEBUG: About to get io from app");
     const io = req.app.get("io");
+    console.log("🔥 DEBUG: io =", io ? "EXISTS" : "NULL");
+
     if (io) {
+      console.log("🔥 DEBUG: Inside io block, about to broadcast");
       //Broadcast to everyone in this project's room
       io.to(`project_${projectId}`).emit("task_created", {
         projectId: parseInt(projectId), // Which project this task belongs to
@@ -87,6 +91,8 @@ const createTask = async (req, res) => {
       });
 
       console.log(`📢 Broadcasted task_created event to project_${projectId}`);
+    } else {
+      console.log("❌ DEBUG: io is NULL - Socket.io not available!");
     }
 
     //Step 7: Send success response to the API caller
