@@ -34,3 +34,14 @@ See `.env.example` for all required variables.
 
 ## 🛡️ Security
 See `SECURITY.md` for full security documentation.
+
+
+## ☁️ AWS Infrastructure
+
+| Service | Purpose | Type |
+|---------|---------|------|
+| EC2 | Application server | t2.micro (Free Tier) |
+| RDS | PostgreSQL database | db.t3.micro (Free Tier) |
+| S3 | File storage | 5GB (Free Tier) |
+| IAM | Secure access control | taskflow-admin user |
+| Budgets | Billing protection | Zero spend alarm |
