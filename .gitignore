@@ -55,3 +55,7 @@ pids/
 *.pid
 *.seed
 *.pid.lock
+
+# AWS
+*.pem
+*.key
