@@ -1,3 +1,23 @@
+
+## 🌍 Live Deployment
+
+TaskFlow is live on AWS!
+
+| Service | URL |
+|---------|-----|
+| API | http://13.53.175.231:3000 |
+| Swagger Docs | http://13.53.175.231:3000/api-docs |
+| Health Check | http://13.53.175.231:3000/ |
+
+## ☁️ AWS Infrastructure
+
+| Service | Details |
+|---------|---------|
+| EC2 | t3.micro - Ubuntu 24.04 LTS |
+| RDS | PostgreSQL 17.6 - db.t3.micro |
+| S3 | taskflow-user-uploads (eu-north-1) |
+| Region | eu-north-1 (Stockholm) |
+
 ## 🏗️ Architecture
 
 ```
